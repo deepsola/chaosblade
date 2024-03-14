@@ -17,8 +17,8 @@ GO_ENV=CGO_ENABLED=1
 GO_MODULE=GO111MODULE=on
 VERSION_PKG=github.com/chaosblade-io/chaosblade/version
 # Specify chaosblade version in docker experiments
-CRI_BLADE_VERSION=github.com/chaosblade-io/chaosblade-exec-cri/version
-OS_BLADE_VERSION=github.com/chaosblade-io/chaosblade-exec-os/version
+CRI_BLADE_VERSION=github.com/deepsola/chaosblade-exec-cri/version
+OS_BLADE_VERSION=github.com/deepsola/chaosblade-exec-os/version
 JVM_BLADE_VERSION=github.com/chaosblade-io/chaosblade-exec-jvm/version
 K8S_BLADE_VERSION=github.com/chaosblade-io/chaosblade-operator/version
 
@@ -45,11 +45,11 @@ BUILD_ARM_IMAGE_PATH=build/image/blade_arm
 BUILD_TARGET_CACHE=$(BUILD_TARGET)/cache
 
 # chaosblade-exec-os
-BLADE_EXEC_OS_PROJECT=https://github.com/chaosblade-io/chaosblade-exec-os.git
+BLADE_EXEC_OS_PROJECT=https://github.com/deepsola/chaosblade-exec-os.git
 BLADE_EXEC_OS_BRANCH=master
 
 # chaosblade-exec-middleware
-BLADE_EXEC_MIDDLEWARE_PROJECT=https://github.com/chaosblade-io/chaosblade-exec-middleware.git
+BLADE_EXEC_MIDDLEWARE_PROJECT=https://github.com/deepsola/chaosblade-exec-middleware.git
 BLADE_EXEC_MIDDLEWARE_BRANCH=main
 
 # chaosblade-exec-cloud
@@ -57,7 +57,7 @@ BLADE_EXEC_CLOUD_PROJECT=https://github.com/chaosblade-io/chaosblade-exec-cloud.
 BLADE_EXEC_CLOUD_BRANCH=main
 
 # chaosblade-exec-cri
-BLADE_EXEC_CRI_PROJECT=https://github.com/chaosblade-io/chaosblade-exec-cri.git
+BLADE_EXEC_CRI_PROJECT=https://github.com/deepsola/chaosblade-exec-cri.git
 BLADE_EXEC_CRI_BRANCH=main
 
 # chaosblade-exec-kubernetes
@@ -123,6 +123,7 @@ pre_build: mkdir_build_target ## Mkdir build target
 # build chaosblade cli: blade
 .PHONY:cli
 cli: ## Build blade cli
+	$(GO) mod tidy
 	$(GO) build $(GO_FLAGS) -o $(BUILD_TARGET_PKG_DIR)/blade ./cli
 
 nsexec: ## Build nsexecgo
@@ -130,12 +131,16 @@ nsexec: ## Build nsexecgo
 
 os: ## Build basic resource experimental scenarios.
 ifneq ($(BUILD_TARGET_CACHE)/chaosblade-exec-os, $(wildcard $(BUILD_TARGET_CACHE)/chaosblade-exec-os))
-	git clone -b $(BLADE_EXEC_OS_BRANCH) $(BLADE_EXEC_OS_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-os
+	git clone -b $(BLADE_EXEC_OS_BRANCH) $(BLADE_EXEC_OS_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-os && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-os && \
+	$(GO) mod tidy
 else
 ifdef ALERTMSG
 	$(error $(ALERTMSG))
 endif
-	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-os pull origin $(BLADE_EXEC_OS_BRANCH)
+	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-os pull origin $(BLADE_EXEC_OS_BRANCH) && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-os && \
+	$(GO) mod tidy
 endif
 	make -C $(BUILD_TARGET_CACHE)/chaosblade-exec-os
 	cp $(BUILD_TARGET_CACHE)/chaosblade-exec-os/$(BUILD_TARGET_BIN)/* $(BUILD_TARGET_BIN)
@@ -143,12 +148,16 @@ endif
 
 middleware: ## Build middleware experimental scenarios.
 ifneq ($(BUILD_TARGET_CACHE)/chaosblade-exec-middleware, $(wildcard $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware))
-	git clone -b $(BLADE_EXEC_MIDDLEWARE_BRANCH) $(BLADE_EXEC_MIDDLEWARE_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware
+	git clone -b $(BLADE_EXEC_MIDDLEWARE_BRANCH) $(BLADE_EXEC_MIDDLEWARE_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware && \
+	$(GO) mod tidy
 else
 ifdef ALERTMSG
 	$(error $(ALERTMSG))
 endif
-	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware pull origin $(BLADE_EXEC_MIDDLEWARE_BRANCH)
+	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware pull origin $(BLADE_EXEC_MIDDLEWARE_BRANCH) && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware && \
+	$(GO) mod tidy
 endif
 	make -C $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware
 	cp $(BUILD_TARGET_CACHE)/chaosblade-exec-middleware/$(BUILD_TARGET_BIN)/* $(BUILD_TARGET_BIN)
@@ -156,12 +165,16 @@ endif
 
 cloud: ## Build cloud experimental scenarios.
 ifneq ($(BUILD_TARGET_CACHE)/chaosblade-exec-cloud, $(wildcard $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud))
-	git clone -b $(BLADE_EXEC_CLOUD_BRANCH) $(BLADE_EXEC_CLOUD_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud
+	git clone -b $(BLADE_EXEC_CLOUD_BRANCH) $(BLADE_EXEC_CLOUD_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud && \
+	$(GO) mod tidy
 else
 ifdef ALERTMSG
 	$(error $(ALERTMSG))
 endif
-	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud pull origin $(BLADE_EXEC_CLOUD_BRANCH)
+	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud pull origin $(BLADE_EXEC_CLOUD_BRANCH) && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud && \
+	$(GO) mod tidy
 endif
 	make -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud
 	cp $(BUILD_TARGET_CACHE)/chaosblade-exec-cloud/$(BUILD_TARGET_BIN)/* $(BUILD_TARGET_BIN)
@@ -170,9 +183,13 @@ endif
 
 kubernetes: ## Build kubernetes experimental scenarios.
 ifneq ($(BUILD_TARGET_CACHE)/chaosblade-operator, $(wildcard $(BUILD_TARGET_CACHE)/chaosblade-operator))
-	git clone -b $(BLADE_OPERATOR_BRANCH) $(BLADE_OPERATOR_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-operator
+	git clone -b $(BLADE_OPERATOR_BRANCH) $(BLADE_OPERATOR_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-operator && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-operator && \
+	$(GO) mod tidy
 else
-	git -C $(BUILD_TARGET_CACHE)/chaosblade-operator pull origin $(BLADE_OPERATOR_BRANCH)
+	git -C $(BUILD_TARGET_CACHE)/chaosblade-operator pull origin $(BLADE_OPERATOR_BRANCH) && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-operator && \
+	$(GO) mod tidy
 endif
 	make -C $(BUILD_TARGET_CACHE)/chaosblade-operator
 	cp $(BUILD_TARGET_CACHE)/chaosblade-operator/$(BUILD_TARGET_BIN)/* $(BUILD_TARGET_BIN)
@@ -180,9 +197,13 @@ endif
 
 cri: ## Build cri experimental scenarios.
 ifneq ($(BUILD_TARGET_CACHE)/chaosblade-exec-cri, $(wildcard $(BUILD_TARGET_CACHE)/chaosblade-exec-cri))
-	git clone -b $(BLADE_EXEC_CRI_BRANCH) $(BLADE_EXEC_CRI_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-cri
+	git clone -b $(BLADE_EXEC_CRI_BRANCH) $(BLADE_EXEC_CRI_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-cri && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-cri && \
+	$(GO) mod tidy
 else
-	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cri pull origin $(BLADE_EXEC_CRI_BRANCH)
+	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cri pull origin $(BLADE_EXEC_CRI_BRANCH) && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-cri && \
+	$(GO) mod tidy
 endif
 	make -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cri
 	cp $(BUILD_TARGET_CACHE)/chaosblade-exec-cri/$(BUILD_TARGET_YAML)/* $(BUILD_TARGET_YAML)
@@ -202,12 +223,16 @@ endif
 
 cplus: ## Build c/c++ experimental scenarios.
 ifneq ($(BUILD_TARGET_CACHE)/chaosblade-exec-cplus, $(wildcard $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus))
-	git clone -b $(BLADE_EXEC_CPLUS_BRANCH) $(BLADE_EXEC_CPLUS_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus
+	git clone -b $(BLADE_EXEC_CPLUS_BRANCH) $(BLADE_EXEC_CPLUS_PROJECT) $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus && \
+	$(GO) mod tidy
 else
 ifdef ALERTMSG
 	$(error $(ALERTMSG))
 endif
-	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus pull origin $(BLADE_EXEC_CPLUS_BRANCH)
+	git -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus pull origin $(BLADE_EXEC_CPLUS_BRANCH) && \
+	cd $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus && \
+	$(GO) mod tidy
 endif
 	make -C $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus
 	cp -R $(BUILD_TARGET_CACHE)/chaosblade-exec-cplus/$(BUILD_TARGET_FOR_JAVA_CPLUS)/$(BUILD_TARGET_DIR_NAME)/* $(BUILD_TARGET_PKG_DIR)
@@ -277,7 +302,7 @@ build_linux_with_arg:
 		-w /go/src/github.com/chaosblade-io/chaosblade \
 		-v ~/.m2/repository:/root/.m2/repository \
         -v $(shell pwd):/go/src/github.com/chaosblade-io/chaosblade \
-		chaosbladeio/chaosblade-build-musl:latest build_with $$ARGS
+		chaosbladeio/chaosblade-build-musl:v1.20.0 build_with $$ARGS
 
 ## Select scenario build linux arm version by docker image
 build_linux_arm_with_arg:

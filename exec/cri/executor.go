@@ -20,9 +20,9 @@ import (
 	"context"
 	"github.com/chaosblade-io/chaosblade-spec-go/log"
 
-	"github.com/chaosblade-io/chaosblade-exec-cri/exec"
 	"github.com/chaosblade-io/chaosblade-spec-go/channel"
 	"github.com/chaosblade-io/chaosblade-spec-go/spec"
+	"github.com/deepsola/chaosblade-exec-cri/exec"
 )
 
 type Executor struct {

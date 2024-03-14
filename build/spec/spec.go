@@ -22,11 +22,9 @@ import (
 	"os"
 	"path"
 
-	"github.com/chaosblade-io/chaosblade-exec-cri/exec"
 	"github.com/chaosblade-io/chaosblade-spec-go/spec"
 	"github.com/chaosblade-io/chaosblade-spec-go/util"
-
-	"github.com/chaosblade-io/chaosblade/cli/cmd"
+	"github.com/deepsola/chaosblade-exec-cri/exec"
 )
 
 var version = "1.7.1"
@@ -41,7 +39,6 @@ func main() {
 	jvmSpecFile := path.Join(filePath, fmt.Sprintf("chaosblade-jvm-spec-%s.yaml", version))
 	osSpecFile := path.Join(filePath, fmt.Sprintf("chaosblade-os-spec-%s.yaml", version))
 	cloudSpecFile := path.Join(filePath, fmt.Sprintf("chaosblade-cloud-spec-%s.yaml", version))
-	k8sSpecFile := path.Join(filePath, fmt.Sprintf("chaosblade-k8s-spec-%s.yaml", version))
 	criSpecFile := path.Join(filePath, fmt.Sprintf("chaosblade-cri-spec-%s.yaml", version))
 	cplusSpecFile := path.Join(filePath, "chaosblade-cplus-spec.yaml")
 	chaosSpecFile := path.Join(targetPath, "chaosblade.spec.yaml")
@@ -51,9 +48,8 @@ func main() {
 	jvmModels := getJvmModels(jvmSpecFile)
 	cplusModels := getCplusModels(cplusSpecFile)
 	criModels := getCriModels(criSpecFile, jvmSpecFile)
-	k8sModels := getKubernetesModels(k8sSpecFile, jvmSpecFile)
 
-	models := mergeModels(osModels, cloudModels, jvmModels, cplusModels, criModels, k8sModels)
+	models := mergeModels(osModels, cloudModels, jvmModels, cplusModels, criModels)
 
 	file, err := os.OpenFile(chaosSpecFile, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0755)
 	if err != nil {
@@ -113,24 +109,6 @@ func getCriModels(criSpecFile, jvmSpecFile string) *spec.Models {
 	return criModels
 }
 
-func getKubernetesModels(k8sSpecFile, jvmSpecFile string) *spec.Models {
-	models, err := util.ParseSpecsToModel(k8sSpecFile, nil)
-	if err != nil {
-		log.Fatalf("parse kubernetes spec failed, %s", err)
-	}
-
-	jvmModels := getJvmModels(jvmSpecFile)
-	for idx := range jvmModels.Models {
-		model := &jvmModels.Models[idx]
-
-		model.ExpScope = "container"
-		spec.AddFlagsToModelSpec(cmd.GetResourceFlags, model)
-		addFlagToActionSpec(model)
-		models.Models = append(models.Models, *model)
-	}
-	return models
-}
-
 func addFlagToActionSpec(model *spec.ExpCommandModel) {
 	for idx := range model.ExpActions {
 		action := &model.ExpActions[idx]
@@ -142,83 +120,6 @@ func addFlagToActionSpec(model *spec.ExpCommandModel) {
 		//model.ExpActions[idx] = *action
 	}
 	model.SetFlags(nil)
-}
-
-func convertSpecToModels(modelSpec spec.ExpModelCommandSpec, prepare spec.ExpPrepareModel) *spec.Models {
-	models := &spec.Models{
-		Version: "v1",
-		Kind:    "plugin",
-		Models:  make([]spec.ExpCommandModel, 0),
-	}
-	model := spec.ExpCommandModel{
-		ExpName:         modelSpec.Name(),
-		ExpShortDesc:    modelSpec.ShortDesc(),
-		ExpLongDesc:     modelSpec.LongDesc(),
-		ExpActions:      make([]spec.ActionModel, 0),
-		ExpSubTargets:   make([]string, 0),
-		ExpPrepareModel: prepare,
-		ExpScope:        modelSpec.Scope(),
-	}
-	for _, action := range modelSpec.Actions() {
-		actionModel := spec.ActionModel{
-			ActionName:      action.Name(),
-			ActionAliases:   action.Aliases(),
-			ActionShortDesc: action.ShortDesc(),
-			ActionLongDesc:  action.LongDesc(),
-			ActionExample:   action.Example(),
-			ActionMatchers: func() []spec.ExpFlag {
-				matchers := make([]spec.ExpFlag, 0)
-				for _, m := range action.Matchers() {
-					matchers = append(matchers, spec.ExpFlag{
-						Name:     m.FlagName(),
-						Desc:     m.FlagDesc(),
-						NoArgs:   m.FlagNoArgs(),
-						Required: m.FlagRequired(),
-					})
-				}
-				return matchers
-			}(),
-			ActionFlags: func() []spec.ExpFlag {
-				flags := make([]spec.ExpFlag, 0)
-				for _, m := range action.Flags() {
-					flags = append(flags, spec.ExpFlag{
-						Name:     m.FlagName(),
-						Desc:     m.FlagDesc(),
-						NoArgs:   m.FlagNoArgs(),
-						Required: m.FlagRequired(),
-					})
-				}
-				for _, m := range modelSpec.Flags() {
-					flags = append(flags, spec.ExpFlag{
-						Name:     m.FlagName(),
-						Desc:     m.FlagDesc(),
-						NoArgs:   m.FlagNoArgs(),
-						Required: m.FlagRequired(),
-					})
-				}
-				flags = append(flags,
-					spec.ExpFlag{
-						Name:     "timeout",
-						Desc:     "set timeout for experiment",
-						Required: false,
-					},
-				)
-				return flags
-			}(),
-		}
-		model.ExpActions = append(model.ExpActions, actionModel)
-	}
-	models.Models = append(models.Models, model)
-	return models
-}
-
-func addModels(parent *spec.Models, child *spec.Models) {
-	for idx, model := range parent.Models {
-		for _, sub := range child.Models {
-			model.ExpSubTargets = append(model.ExpSubTargets, sub.ExpName)
-		}
-		parent.Models[idx] = model
-	}
 }
 
 func mergeModels(models ...*spec.Models) *spec.Models {

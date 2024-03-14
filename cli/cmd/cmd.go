@@ -53,7 +53,6 @@ func CmdInit() *baseCommand {
 	queryCommand.AddCommand(&QueryDiskCommand{})
 	queryCommand.AddCommand(&QueryNetworkCommand{})
 	queryCommand.AddCommand(&QueryJvmCommand{})
-	queryCommand.AddCommand(&QueryK8sCommand{})
 
 	// UPDATE 2023-12-30 Disable server command mode.
 

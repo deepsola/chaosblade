@@ -23,26 +23,23 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/chaosblade-io/chaosblade-operator/pkg/apis/chaosblade/v1alpha1"
 	"github.com/chaosblade-io/chaosblade-spec-go/channel"
 	"github.com/chaosblade-io/chaosblade-spec-go/spec"
 	"github.com/spf13/cobra"
 
 	"github.com/chaosblade-io/chaosblade/data"
-	"github.com/chaosblade-io/chaosblade/exec/kubernetes"
 )
 
 const (
 	ForceRemoveFlag = "force-remove"
 	ExpTargetFlag   = "target"
-	KubeconfigFlag  = "kubeconfig"
 )
 
 type DestroyCommand struct {
 	baseCommand
 	*baseExpCommandService
-	forceRemove           bool
-	expTarget, kubeconfig string
+	forceRemove bool
+	expTarget   string
 }
 
 func (dc *DestroyCommand) Init() {
@@ -59,9 +56,8 @@ func (dc *DestroyCommand) Init() {
 	}
 	flags := dc.command.PersistentFlags()
 	flags.StringVar(&uid, UidFlag, "", "Set Uid for the experiment, adapt to container")
-	flags.StringVar(&dc.expTarget, ExpTargetFlag, "", "Specify experiment target, such as --target k8s. Used to destroy creating k8s experiments without using blade command")
+	flags.StringVar(&dc.expTarget, ExpTargetFlag, "", "Specify experiment target")
 	flags.BoolVar(&dc.forceRemove, ForceRemoveFlag, false, "Force remove chaosblade resource or record even if destroy experiment failed")
-	flags.StringVar(&dc.kubeconfig, KubeconfigFlag, "", "The config file of kubernetes cluster. Used to destroy creating k8s experiments without using blade command")
 	dc.baseExpCommandService = newBaseExpCommandService(dc)
 }
 
@@ -71,69 +67,38 @@ func (dc *DestroyCommand) runDestroyWithUid(ctx context.Context, cmd *cobra.Comm
 	uid := args[0]
 	log.Infof(ctx, "destroy by %s uid, force-remove: %t, target: %s", uid, dc.forceRemove, dc.expTarget)
 	model, err := GetDS().QueryExperimentModelByUid(uid)
-	lowerExpTarget := strings.ToLower(dc.expTarget)
-	isK8sTarget := lowerExpTarget == "kubernetes" || lowerExpTarget == "k8s"
 	if err != nil || model == nil {
-		if isK8sTarget {
-			return dc.destroyAndRemoveK8sExperimentWithoutRecordByForceFlag(cmd, uid)
-		}
 		if err != nil {
 			return spec.ResponseFailWithFlags(spec.DatabaseError, "query", err)
 		}
 		return spec.ResponseFailWithFlags(spec.DataNotFound, uid)
 	}
-	return dc.destroyAndRemoveExperimentByUidAndForceFlag(cmd, err, model, uid, isK8sTarget)
-}
-
-// destroyAndRemoveK8sExperimentWithoutRecordByForceFlag deletes and forcibly removes the chaosblade resources in the cluster by the forceRemoveFlag.
-func (dc *DestroyCommand) destroyAndRemoveK8sExperimentWithoutRecordByForceFlag(cmd *cobra.Command, uid string) error {
-	response, err := dc.destroyK8sExperimentWithoutRecord(uid)
-	removeResourceErr := dc.checkAndForceRemoveForK8sExp(uid, dc.kubeconfig)
-	if err == nil && removeResourceErr == nil {
-		cmd.Println(response.Print())
-		return nil
-	}
-	if err == nil && removeResourceErr != nil {
-		return spec.ResponseFailWithFlags(spec.DatabaseError, "remove",
-			fmt.Sprintf("the %s has been destroyed, but forcibly remove resource failed, %v", uid, removeResourceErr))
-	}
-	response = err.(*spec.Response)
-	if dc.forceRemove && removeResourceErr == nil {
-		response.Err = fmt.Sprintf("forcibly remove %s resource success, but destroy the experiment failed, %s", uid, response.Err)
-		return response
-	}
-	if dc.forceRemove {
-		response.Err = fmt.Sprintf("destroy and forcibly remove the %s experiment failed, %s, %v", uid, response.Err, removeResourceErr)
-	}
-	return response
+	return dc.destroyAndRemoveExperimentByUidAndForceFlag(cmd, err, model, uid)
 }
 
 // destroyAndRemoveExperimentByUidAndForceFlag destroys and forcibly deletes experiments with local records, including k8s experiments.
 func (dc *DestroyCommand) destroyAndRemoveExperimentByUidAndForceFlag(
-	cmd *cobra.Command, err error, model *data.ExperimentModel, uid string, isK8sTarget bool) error {
+	cmd *cobra.Command, err error, model *data.ExperimentModel, uid string) error {
 	response, err := dc.destroyExperimentByUid(model, uid)
 	removeRecordErr := dc.checkAndForceRemoveForExpRecord(uid)
-	var removeResourceErr error
-	if isK8sTarget {
-		removeResourceErr = dc.checkAndForceRemoveForK8sExp(uid, dc.kubeconfig)
-	}
+
 	if err == nil {
-		if removeRecordErr == nil && removeResourceErr == nil {
+		if removeRecordErr == nil {
 			cmd.Println(response.Print())
 			return nil
 		}
 		return spec.ResponseFailWithFlags(spec.DatabaseError, "remove",
-			fmt.Sprintf("the %s has been destroyed, but forcibly remove resource failed, %v|%v",
-				uid, removeRecordErr, removeResourceErr))
+			fmt.Sprintf("the %s has been destroyed, but forcibly remove resource failed, %v",
+				uid, removeRecordErr))
 	}
 	response = err.(*spec.Response)
-	if dc.forceRemove && removeRecordErr == nil && removeResourceErr == nil {
+	if dc.forceRemove && removeRecordErr == nil {
 		response.Err = fmt.Sprintf("forcibly remove %s resource success, but destroy the experiment failed, %s", uid, response.Err)
 		return response
 	}
 	if dc.forceRemove {
-		response.Err = fmt.Sprintf("destroy and forcibly remove the %s experiment failed, %s, %v|%v",
-			uid, response.Err, removeRecordErr, removeResourceErr)
+		response.Err = fmt.Sprintf("destroy and forcibly remove the %s experiment failed, %s, %v",
+			uid, response.Err, removeRecordErr)
 	}
 	return response
 }
@@ -156,37 +121,6 @@ func (dc *DestroyCommand) destroyExperimentByUid(model *data.ExperimentModel, ui
 		return nil, err
 	}
 	return spec.ReturnSuccess(expModel), nil
-}
-
-//destroyK8sExperimentWithoutRecord deletes chaosblade resources by name in the cluster.
-func (dc *DestroyCommand) destroyK8sExperimentWithoutRecord(uid string) (*spec.Response, error) {
-	if uid == "" || dc.kubeconfig == "" {
-		return nil, spec.ResponseFailWithFlags(spec.ParameterLess,
-			"usage: blade destroy UID --target k8s --kubeconfig KUBECONFIG")
-	}
-	exp, err := kubernetes.GetChaosBladeByName(uid, dc.kubeconfig)
-	if err != nil {
-		return nil, spec.ResponseFailWithFlags(spec.K8sExecFailed, "GetChaosBlade", err)
-	}
-	if exp.Status.Phase == v1alpha1.ClusterPhaseDestroyed {
-		return spec.ReturnSuccess(exp), nil
-	}
-	executor, expModel, err := dc.getExecutorAndExpModelByChaosBladeResource(exp)
-	if err != nil {
-		return nil, spec.ResponseFailWithFlags(spec.HandlerExecNotFound, err.Error())
-	}
-	if err := dc.destroyExperiment(uid, executor, expModel); err != nil {
-		return nil, err
-	}
-	return spec.ReturnSuccess(exp), nil
-}
-
-// checkAndForceRemoveForK8sExp deletes chaosblade resource by resource name if force-remove is true
-func (dc *DestroyCommand) checkAndForceRemoveForK8sExp(name, kubeconfig string) error {
-	if dc.forceRemove {
-		return kubernetes.RemoveFinalizer(name, kubeconfig)
-	}
-	return nil
 }
 
 // checkAndForceRemoveForExpRecord deletes experiment record by uid if force-remove is true
@@ -237,38 +171,6 @@ func (dc *DestroyCommand) getExecutorAndExpModelByRecord(model *data.ExperimentM
 	// covert commandModel to expModel
 	expModel = spec.ConvertCommandsToExpModel(actionCommand, actionTargetCommand, model.Flag)
 	return
-}
-
-func (dc *DestroyCommand) getExecutorAndExpModelByChaosBladeResource(chaosBlade *v1alpha1.ChaosBlade) (
-	executor spec.Executor, expModel *spec.ExpModel, err error) {
-	for _, experiment := range chaosBlade.Spec.Experiments {
-		actionTarget := fmt.Sprintf("%s-%s", experiment.Scope, experiment.Target)
-		executor = dc.GetExecutor("k8s", actionTarget, experiment.Action)
-		if executor == nil {
-			err = fmt.Errorf("can't find executor for k8s %s, %s", actionTarget, experiment.Action)
-			return
-		}
-		expModel = convertCBExperimentToExpModel(experiment, actionTarget)
-		break
-	}
-	return
-}
-
-func convertCBExperimentToExpModel(experiment v1alpha1.ExperimentSpec, actionTarget string) *spec.ExpModel {
-	model := &spec.ExpModel{
-		Target:      actionTarget,
-		ActionName:  experiment.Action,
-		ActionFlags: make(map[string]string, 0),
-	}
-	if experiment.Matchers != nil {
-		for _, flag := range experiment.Matchers {
-			if flag.Value == nil || len(flag.Value) == 0 {
-				continue
-			}
-			model.ActionFlags[flag.Name] = strings.ReplaceAll(strings.Join(flag.Value, ","), "@@##", " ")
-		}
-	}
-	return model
 }
 
 func (dc *DestroyCommand) bindFlagsFunction() func(commandFlags map[string]func() string, cmd *cobra.Command, specFlags []spec.ExpFlagSpec) {

@@ -19,10 +19,10 @@ package os
 import (
 	"context"
 	"fmt"
-	"github.com/chaosblade-io/chaosblade-exec-os/exec"
 	"github.com/chaosblade-io/chaosblade-spec-go/log"
 	"github.com/chaosblade-io/chaosblade-spec-go/spec"
 	"github.com/chaosblade-io/chaosblade-spec-go/util"
+	"github.com/deepsola/chaosblade-exec-os/exec"
 	os_exec "os/exec"
 	"path"
 	"syscall"
@@ -46,9 +46,9 @@ func (e *Executor) Exec(uid string, ctx context.Context, model *spec.ExpModel) *
 		return sshExecutor.Exec(uid, ctx, model)
 	}
 
-	var mode string 
+	var mode string
 	var argsArray []string
-	
+
 	_, isDestroy := spec.IsDestroy(ctx)
 	if isDestroy {
 		mode = spec.Destroy
@@ -58,7 +58,7 @@ func (e *Executor) Exec(uid string, ctx context.Context, model *spec.ExpModel) *
 
 	argsArray = append(argsArray, mode, model.Target, model.ActionName, fmt.Sprintf("--uid=%s", uid))
 	for k, v := range model.ActionFlags {
-		if v == "" ||  k == "timeout" {
+		if v == "" || k == "timeout" {
 			continue
 		}
 		argsArray = append(argsArray, fmt.Sprintf("--%s=%s", k, v))

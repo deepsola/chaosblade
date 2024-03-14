@@ -19,11 +19,9 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"github.com/chaosblade-io/chaosblade-exec-cri/exec"
-	"github.com/chaosblade-io/chaosblade-operator/exec/model"
 	"github.com/chaosblade-io/chaosblade-spec-go/log"
-	"github.com/chaosblade-io/chaosblade/exec/middleware"
 	"github.com/chaosblade-io/chaosblade/exec/cloud"
+	"github.com/deepsola/chaosblade-exec-cri/exec"
 	"path"
 
 	"github.com/chaosblade-io/chaosblade-spec-go/channel"
@@ -35,9 +33,7 @@ import (
 
 	"github.com/chaosblade-io/chaosblade/exec/cplus"
 	"github.com/chaosblade-io/chaosblade/exec/cri"
-	"github.com/chaosblade-io/chaosblade/exec/docker"
 	"github.com/chaosblade-io/chaosblade/exec/jvm"
-	"github.com/chaosblade-io/chaosblade/exec/kubernetes"
 	"github.com/chaosblade-io/chaosblade/exec/os"
 	"github.com/chaosblade-io/chaosblade/version"
 )
@@ -119,20 +115,14 @@ func (ec *baseExpCommandService) GetExecutor(target, actionTarget, action string
 func (ec *baseExpCommandService) registerSubCommands() {
 	// register os type command
 	ec.registerOsExpCommands()
-	// register middleware command
-	ec.registerMiddlewareExpCommands()
 	// register cloud type command
 	ec.registerCloudExpCommands()
 	// register jvm framework commands
 	ec.registerJvmExpCommands()
 	// register cplus
 	ec.registerCplusExpCommands()
-	// register docker command
-	ec.registerDockerExpCommands()
 	// register cri command
 	ec.registerCriExpCommands()
-	// register k8s command
-	ec.registerK8sExpCommands()
 }
 
 // registerOsExpCommands
@@ -151,22 +141,6 @@ func (ec *baseExpCommandService) registerOsExpCommands() []*modelCommand {
 	return osCommands
 }
 
-
-// registerMiddlewareExpCommands
-func (ec *baseExpCommandService) registerMiddlewareExpCommands() []*modelCommand {
-	file := path.Join(util.GetYamlHome(), fmt.Sprintf("chaosblade-middleware-spec-%s.yaml", version.Ver))
-	models, err := specutil.ParseSpecsToModel(file, middleware.NewExecutor())
-	if err != nil {
-		return nil
-	}
-	middlewareCommands := make([]*modelCommand, 0)
-	for idx := range models.Models {
-		model := &models.Models[idx]
-		command := ec.registerExpCommand(model, "")
-		middlewareCommands = append(middlewareCommands, command)
-	}
-	return middlewareCommands
-}
 // registerCloudExpCommands
 func (ec *baseExpCommandService) registerCloudExpCommands() []*modelCommand {
 	file := path.Join(util.GetYamlHome(), fmt.Sprintf("chaosblade-cloud-spec-%s.yaml", version.Ver))
@@ -214,87 +188,6 @@ func (ec *baseExpCommandService) registerCplusExpCommands() []*modelCommand {
 		cplusCommands = append(cplusCommands, command)
 	}
 	return cplusCommands
-}
-
-// registerDockerExpCommands
-func (ec *baseExpCommandService) registerDockerExpCommands() []*modelCommand {
-	file := path.Join(util.GetYamlHome(), fmt.Sprintf("chaosblade-docker-spec-%s.yaml", version.Ver))
-	models, err := specutil.ParseSpecsToModel(file, docker.NewExecutor())
-	if err != nil {
-		return nil
-	}
-	dockerSpec := docker.NewCommandModelSpec()
-	modelCommands := make([]*modelCommand, 0)
-	for idx := range models.Models {
-		model := &models.Models[idx]
-		command := ec.registerExpCommand(model, dockerSpec.Name())
-		modelCommands = append(modelCommands, command)
-	}
-
-	file = path.Join(util.GetYamlHome(), fmt.Sprintf("chaosblade-jvm-spec-%s.yaml", version.Ver))
-	models, err = util.ParseSpecsToModel(file, docker.NewExecutor())
-	if err != nil {
-		return nil
-	}
-	for idx := range models.Models {
-		model := &models.Models[idx]
-		model.ExpScope = "docker"
-		spec.AddFlagsToModelSpec(exec.GetExecInContainerFlags, model)
-		command := ec.registerExpCommand(model, dockerSpec.Name())
-		modelCommands = append(modelCommands, command)
-	}
-
-	dockerCmd := ec.registerExpCommand(dockerSpec, "")
-	cobraCmd := dockerCmd.CobraCmd()
-	for _, child := range modelCommands {
-		copyAndAddCommand(cobraCmd, child.command)
-	}
-	return modelCommands
-}
-
-func GetResourceFlags() []spec.ExpFlagSpec {
-	coverageFlags := model.GetResourceCoverageFlags()
-	commonFlags := model.GetResourceCommonFlags()
-	containerFlags := model.GetContainerFlags()
-	chaosbladeFlags := model.GetChaosBladeFlags()
-	return append(append(append(coverageFlags, commonFlags...), containerFlags...), chaosbladeFlags...)
-}
-
-func (ec *baseExpCommandService) registerK8sExpCommands() []*modelCommand {
-	// 读取 k8s 下的场景并注册
-	file := path.Join(util.GetYamlHome(), fmt.Sprintf("chaosblade-k8s-spec-%s.yaml", version.Ver))
-	models, err := specutil.ParseSpecsToModel(file, kubernetes.NewComposeExecutor())
-	if err != nil {
-		return nil
-	}
-	k8sSpec := kubernetes.NewCommandModelSpec()
-	modelCommands := make([]*modelCommand, 0)
-	for idx := range models.Models {
-		model := &models.Models[idx]
-		command := ec.registerExpCommand(model, k8sSpec.Name())
-		modelCommands = append(modelCommands, command)
-	}
-
-	file = path.Join(util.GetYamlHome(), fmt.Sprintf("chaosblade-jvm-spec-%s.yaml", version.Ver))
-	models, err = util.ParseSpecsToModel(file, kubernetes.NewExecutor())
-	if err != nil {
-		return nil
-	}
-	for idx := range models.Models {
-		model := &models.Models[idx]
-		model.ExpScope = "container"
-		spec.AddFlagsToModelSpec(GetResourceFlags, model)
-		command := ec.registerExpCommand(model, k8sSpec.Name())
-		modelCommands = append(modelCommands, command)
-	}
-
-	k8sCmd := ec.registerExpCommand(k8sSpec, "")
-	cobraCmd := k8sCmd.CobraCmd()
-
-	for _, child := range modelCommands {
-		copyAndAddCommand(cobraCmd, child.command)
-	}
-	return modelCommands
 }
 
 // registerCriExpCommands
